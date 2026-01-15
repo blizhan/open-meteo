@@ -40,6 +40,17 @@ def read_all(reader: object) -> Iterable[float]:
     raise ValueError("OM reader does not expose read()")
 
 
+def round_ties_away_from_zero(value: float) -> int:
+    """Round to nearest integer, with half values rounded away from zero.
+
+    This matches Swift's `roundf()` behavior (ties away from zero) and differs
+    from Python's built-in `round()` which uses banker's rounding (ties to even).
+    """
+    if value >= 0:
+        return int(math.floor(value + 0.5))
+    return int(math.ceil(value - 0.5))
+
+
 def find_point_regular(
     lat: float,
     lon: float,
@@ -50,8 +61,8 @@ def find_point_regular(
     nx: int,
     ny: int,
 ) -> tuple[int, int]:
-    x = int(round((lon - lon_min) / dx))
-    y = int(round((lat - lat_min) / dy))
+    x = round_ties_away_from_zero((lon - lon_min) / dx)
+    y = round_ties_away_from_zero((lat - lat_min) / dy)
 
     is_global_x = nx * dx >= 359
     is_global_y = ny * dy >= 179
