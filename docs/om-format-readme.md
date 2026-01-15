@@ -27,6 +27,31 @@ This logic is implemented in `RegularGrid.findPointXy` / `findPoint`.【F:Source
 
 > **Note:** For global grids, the Swift implementation allows some wrap/edge cases to keep the index inside `[0, nx/ny)`.
 
+## 2b) Reduced Gaussian grid (高斯/减缩高斯网格, ECMWF) → OM
+
+Some ECMWF products in this repository (e.g. IFS / SEAS5 / EC46) are provided on a **reduced Gaussian grid** (`gridType=reduced_gg` in GRIB). In that case, the pipeline is **not** “Gaussian → regrid to regular lat/lon → OM”. Instead, the conversion is:
+
+**GRIB (`reduced_gg`) → flat array in native scan order → OM**
+
+Concretely:
+
+- **No regridding step**: values are loaded from GRIB in the order returned by ecCodes and written as-is to OM.
+- **OM dimensions**: the “spatial” axis is treated as a **1D locations axis** with length `numberOfDataPoints`.
+  - In code, `GaussianGrid.nx == type.count` and `GaussianGrid.ny == 1`.【F:Sources/App/Domains/GaussianGrid.swift†L49-L61】【F:Sources/App/Domains/GaussianGrid.swift†L136-L141】
+  - When reading GRIB, the converter validates `numberOfDataPoints == nx * ny` for `reduced_gg` and then loads values into a flat buffer `array.data[i]` (`i = 0..<count`).【F:Sources/App/Helper/Download/Curl+Grib.swift†L150-L175】
+- **Grid definition is not in OM**: for Gaussian grids you cannot derive `latMin/lonMin/dx/dy` from the OM file. The mapping `gridpoint <-> (lat, lon)` depends on the **Gaussian grid type** (e.g. O1280 / O320 / N160) and the repository’s indexing rules.
+
+How the repository indexes a reduced Gaussian grid:
+
+- A single integer `gridpoint` (the OM “location index”) is used.
+- The grid is conceptually a set of latitude lines, where each line has its own `nxOf(y)` (number of longitudes), so there is no single global `dx`.
+- `gridpoint` is defined as `gridpoint = integral(y) + x`, where `integral(y)` is the prefix-sum of `nxOf` over all latitude lines `< y`.【F:Sources/App/Domains/GaussianGrid.swift†L86-L107】【F:Sources/App/Domains/GaussianGrid.swift†L168-L171】
+- Given a `(lat, lon)`, the repository picks the nearest point (no fractional/bilinear position) via `GaussianGrid.findPoint` / `findPointXY`.【F:Sources/App/Domains/GaussianGrid.swift†L146-L201】
+
+Where to get the Gaussian grid type when you only have the OM files:
+
+- The domain-level `meta.json` includes `crs_wkt` (WKT2). For reduced Gaussian grids this project writes an artificial WKT with a `REMARK["Reduced Gaussian Grid O320 (ECMWF)"]` (or similar), so readers can detect the intended Gaussian grid type.【F:Sources/App/Helper/File/ModelMetaJson.swift†L81-L108】【F:Sources/App/Domains/GaussianGrid.swift†L6-L20】
+
 ## 3) Python example (read dimensions + value at lat/lon)
 
 The script below expects a Python OM reader library (not included in this repo). It is written to work with a minimal `OmFileReader` interface that exposes:
@@ -49,10 +74,24 @@ python examples/om_read_example.py \
   --file data/cmc_gem_gdps/temperature_2m/chunk_0.om \
   --lat 52.52 \
   --lon 13.41 \
+  --grid regular \
   --lat-min -90 \
   --lon-min -180 \
   --dx 0.25 \
   --dy 0.25
+```
+
+### Example command (Gaussian grid / 高斯网格)
+
+For ECMWF reduced Gaussian grid files written by this repo, the OM array is stored as `ny=1` and `nx=numberOfDataPoints`. The script implements the repository’s nearest-point mapping (`GaussianGrid.findPoint`) for O-type grids.
+
+```bash
+python examples/om_read_example.py \
+  --file data_spatial/ecmwf_seas5/202501010000/2025-01-01T06:00.om \
+  --lat 52.52 \
+  --lon 13.41 \
+  --grid gaussian \
+  --gaussian-type o320
 ```
 
 ### Example output (shape + bounds + value)
@@ -75,3 +114,5 @@ See `examples/om_read_example.py` for the full script.
 - OM writing logic and metadata: `OmFileWriterHelper`【F:Sources/App/Helper/OmFileWriterHelper.swift†L6-L146】
 - Regular grid index mapping: `RegularGrid.findPointXy` / `findPoint`【F:Sources/App/Domains/RegularGrid.swift†L43-L88】
 - GRIB → OM conversion example: MeteoFrance downloader【F:Sources/App/MeteoFrance/MeteoFranceDownloader.swift†L114-L150】
+- Reduced Gaussian grid indexing: `GaussianGrid`【F:Sources/App/Domains/GaussianGrid.swift†L1-L206】
+- GRIB reduced_gg dimensional check + value loading: `GribArray2D.load`【F:Sources/App/Helper/Download/Curl+Grib.swift†L150-L205】
