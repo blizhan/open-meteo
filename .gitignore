@@ -14,3 +14,7 @@ data_spatial/
 .cache
 .venv
 .vscode/
+
+# Python
+__pycache__/
+*.py[cod]
