@@ -74,10 +74,24 @@ python examples/om_read_example.py \
   --file data/cmc_gem_gdps/temperature_2m/chunk_0.om \
   --lat 52.52 \
   --lon 13.41 \
+  --grid regular \
   --lat-min -90 \
   --lon-min -180 \
   --dx 0.25 \
   --dy 0.25
+```
+
+### Example command (Gaussian grid / 高斯网格)
+
+For ECMWF reduced Gaussian grid files written by this repo, the OM array is stored as `ny=1` and `nx=numberOfDataPoints`. The script implements the repository’s nearest-point mapping (`GaussianGrid.findPoint`) for O-type grids.
+
+```bash
+python examples/om_read_example.py \
+  --file data_spatial/ecmwf_seas5/202501010000/2025-01-01T06:00.om \
+  --lat 52.52 \
+  --lon 13.41 \
+  --grid gaussian \
+  --gaussian-type o320
 ```
 
 ### Example output (shape + bounds + value)
