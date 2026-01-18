@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Dict, Literal, Tuple, TypedDict, Union
+from dataclasses import dataclass
+from typing import Dict, Literal, Optional, Tuple, TypedDict, Union
 
 Range = Tuple[float, float]
 LatLonValue = Union[float, Range]
@@ -94,6 +95,75 @@ class GridSpec(TypedDict):
 
 
 DomainGridMap = Dict[str, Dict[str, GridSpec]]
+
+
+@dataclass(frozen=True)
+class LambertConformalConicProjection:
+    lambda0: float
+    phi0: float
+    phi1: float
+    phi2: float
+    radius: float
+
+
+@dataclass(frozen=True)
+class RotatedLatLonProjection:
+    latitude: float
+    longitude: float
+
+
+@dataclass(frozen=True)
+class StereographicProjection:
+    latitude: float
+    longitude: float
+    radius: float
+
+
+@dataclass(frozen=True)
+class LambertAzimuthalEqualAreaProjection:
+    lambda0: float
+    phi1: float
+    radius: float
+
+
+Projection = Union[
+    LambertConformalConicProjection,
+    RotatedLatLonProjection,
+    StereographicProjection,
+    LambertAzimuthalEqualAreaProjection,
+]
+
+
+@dataclass(frozen=True)
+class RegularGrid:
+    nx: int
+    ny: int
+    lat_min: float
+    lon_min: float
+    dx: float
+    dy: float
+    search_radius: int = 1
+
+
+@dataclass(frozen=True)
+class ProjectionGrid:
+    nx: int
+    ny: int
+    projection: Projection
+    latitude: Optional[LatLonValue] = None
+    longitude: Optional[LatLonValue] = None
+    latitude_projection_origin: Optional[float] = None
+    longitude_projection_origin: Optional[float] = None
+    dx: Optional[float] = None
+    dy: Optional[float] = None
+
+
+@dataclass(frozen=True)
+class GaussianGrid:
+    grid_type: GaussianGridTypeName
+
+
+Grid = Union[RegularGrid, ProjectionGrid, GaussianGrid]
 
 
 DOMAIN_GRIDS: DomainGridMap = {
@@ -1467,3 +1537,85 @@ DOMAIN_GRIDS: DomainGridMap = {
         },
     },
 }
+
+
+def build_projection(defn: ProjectionDef) -> Projection:
+    projection_type = defn["type"]
+    params = defn["params"]
+    if projection_type == "LambertConformalConicProjection":
+        typed = params
+        return LambertConformalConicProjection(
+            lambda0=typed["lambda0"],
+            phi0=typed["phi0"],
+            phi1=typed["phi1"],
+            phi2=typed["phi2"],
+            radius=typed["radius"],
+        )
+    if projection_type == "RotatedLatLonProjection":
+        typed = params
+        return RotatedLatLonProjection(
+            latitude=typed["latitude"],
+            longitude=typed["longitude"],
+        )
+    if projection_type == "StereographicProjection":
+        typed = params
+        return StereographicProjection(
+            latitude=typed["latitude"],
+            longitude=typed["longitude"],
+            radius=typed["radius"],
+        )
+    if projection_type == "LambertAzimuthalEqualAreaProjection":
+        typed = params
+        return LambertAzimuthalEqualAreaProjection(
+            lambda0=typed["lambda0"],
+            phi1=typed["phi1"],
+            radius=typed["radius"],
+        )
+    raise ValueError(f"Unsupported projection type: {projection_type}")
+
+
+def build_grid(spec: GridSpec) -> Grid:
+    grid_type = spec["type"]
+    params = spec["params"]
+    if grid_type == "RegularGrid":
+        return RegularGrid(
+            nx=params["nx"],
+            ny=params["ny"],
+            lat_min=params["latMin"],
+            lon_min=params["lonMin"],
+            dx=params["dx"],
+            dy=params["dy"],
+            search_radius=params.get("searchRadius", 1),
+        )
+    if grid_type == "GaussianGrid":
+        return GaussianGrid(grid_type=params["grid_type"])
+    if grid_type == "ProjectionGrid":
+        projection = build_projection(params["projection"])
+        return ProjectionGrid(
+            nx=params["nx"],
+            ny=params["ny"],
+            projection=projection,
+            latitude=params.get("latitude"),
+            longitude=params.get("longitude"),
+            latitude_projection_origin=params.get("latitudeProjectionOrigin"),
+            longitude_projection_origin=params.get("longitudeProjectionOrigin"),
+            dx=params.get("dx"),
+            dy=params.get("dy"),
+        )
+    raise ValueError(f"Unsupported grid type: {grid_type}")
+
+
+def get_grid_spec(
+    domain: str,
+    name: str,
+    registry: DomainGridMap = DOMAIN_GRIDS,
+) -> GridSpec:
+    return registry[domain][name]
+
+
+def build_grid_from_domain(
+    domain: str,
+    name: str,
+    registry: DomainGridMap = DOMAIN_GRIDS,
+) -> Grid:
+    return build_grid(get_grid_spec(domain=domain, name=name, registry=registry))
